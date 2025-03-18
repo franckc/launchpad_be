@@ -4,6 +4,7 @@ from api.utils import create_error_response
 from api.models import db, Agent
 import logging
 import os
+from api.image.builder import build_image
 
 logger = logging.getLogger(__name__)
 
@@ -25,17 +26,21 @@ def create_image(agent_id):
         # Read the agent configuration from the DB
         agent = db.session.query(Agent).filter(Agent.id == agent_id).first()
         
+        # Log the image creation request
+
         if not agent:
             return create_error_response(f"Agent with id {agent_id} not found", 404)
 
-        github_url = agent.config.get('github_url')
+        github_url = agent.config.get('githubUrl')
         if not github_url:
-            return create_error_response("Agent configuration missing github_url", 400)
+            return create_error_response("Agent configuration missing githubUrl", 400)
 
-        # TODO: implement image creation. input is a github URL.
+        # Start the image creation process
+        logger.info(f"Creating image for agent {agent_id} with repository URL {github_url}")
+        image_name = build_image(github_url, agent_id)
+        logger.info(f"Image creation done for agent {agent_id}. Image name: {image_name}")
 
-
-        return jsonify({'status': 'CREATING'})
+        return jsonify({'status': 'CREATED', 'image_name': image_name})
 
     except ValueError as e:
         return create_error_response(str(e), 400)
