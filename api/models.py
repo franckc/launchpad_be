@@ -12,6 +12,7 @@ class Image(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     agent_id = db.Column(db.Integer, db.ForeignKey('agent.id'), nullable=False)
     build_status = db.Column(db.String(50), nullable=False, default='PENDING') # PENDING, RUNNING, DONE, ERROR
+    name = db.Column(db.String(255), nullable=True) # name of the docker image, populated after build is successful.
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 

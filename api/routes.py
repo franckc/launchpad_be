@@ -5,6 +5,7 @@ from api.models import db, Agent
 import logging
 import os
 from api.image.builder import build_image
+from api.models import Image
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,6 @@ def create_image(agent_id):
         agent = db.session.query(Agent).filter(Agent.id == agent_id).first()
         
         # Log the image creation request
-
         if not agent:
             return create_error_response(f"Agent with id {agent_id} not found", 404)
 
@@ -39,6 +39,12 @@ def create_image(agent_id):
         logger.info(f"Creating image for agent {agent_id} with repository URL {github_url}")
         image_name = build_image(github_url, agent_id)
         logger.info(f"Image creation done for agent {agent_id}. Image name: {image_name}")
+
+        # Update the image status in the database
+        image = Image(agent_id=agent_id, build_status="DONE", name=image_name)
+        db.session.add(image)
+        db.session.commit()
+        logger.info(f"Image record created in database for agent {agent_id}")
 
         return jsonify({'status': 'CREATED', 'image_name': image_name})
 
