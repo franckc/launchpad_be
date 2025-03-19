@@ -19,6 +19,7 @@ class Image(db.Model):
 class Run(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     agent_id = db.Column(db.Integer, db.ForeignKey('agent.id'), nullable=False)
+    image_id = db.Column(db.Integer, db.ForeignKey('image.id'), nullable=False)
     config = db.Column(db.JSON, nullable=False)
     status = db.Column(db.String(50), nullable=False, default='PENDING') # PENDING, RUNNING, WAITING_FOR_FEEDBACK, DONE, ERROR
     output = db.Column(db.JSON, nullable=True)  # Output from the agent.

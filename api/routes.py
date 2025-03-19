@@ -1,11 +1,12 @@
+import logging
+import os
+import requests
+
 from flask import request, jsonify
 from api import app
 from api.utils import create_error_response
-from api.models import db, Agent
-import logging
-import os
 from api.image.builder import build_image
-from api.models import Image
+from api.models import db, Image, Run, Agent
 
 logger = logging.getLogger(__name__)
 
@@ -24,34 +25,44 @@ def create_image(agent_id):
         if not request.is_json:
             return create_error_response("Request must be JSON", 400)
 
-        # Read the agent configuration from the DB
-        agent = db.session.query(Agent).filter(Agent.id == agent_id).first()
-        
-        # Log the image creation request
-        if not agent:
-            return create_error_response(f"Agent with id {agent_id} not found", 404)
-
         github_url = agent.config.get('githubUrl')
         if not github_url:
             return create_error_response("Agent configuration missing githubUrl", 400)
 
-        # Start the image creation process
-        logger.info(f"Creating image for agent {agent_id} with repository URL {github_url}")
-        image_name = build_image(github_url, agent_id)
-        logger.info(f"Image creation done for agent {agent_id}. Image name: {image_name}")
+        # Read the agent configuration from the DB
+        agent = db.session.query(Agent).filter(Agent.id == agent_id).first()
+        
+        if not agent:
+            return create_error_response(f"Agent with id {agent_id} not found", 404)
 
-        # Update the image status in the database
+        # Create a record in the database for the image
         image = Image(agent_id=agent_id, build_status="DONE", name=image_name)
         db.session.add(image)
         db.session.commit()
         logger.info(f"Image record created in database for agent {agent_id}")
 
-        return jsonify({'status': 'CREATED', 'image_name': image_name})
+        # Start the image creation process
+        try:
+            logger.info(f"Creating image for agent {agent_id} with repository URL {github_url}")
+            image_name = build_image(github_url, agent_id)
+            logger.info(f"Image creation done for agent {agent_id}. Image name: {image_name}")
+
+            # Update the image status in the database
+            image.build_status = 'DONE'
+            db.session.commit()
+        except Exception as e:
+            logger.error(f"Error building image for agent {agent_id}: {str(e)}")
+            # Update image status to ERROR in the DB and return the error in the API response
+            image.build_status = 'ERROR'
+            db.session.commit()
+            raise e
 
     except ValueError as e:
         return create_error_response(str(e), 400)
     except Exception as e:
         return create_error_response(f"Internal server error: {str(e)}", 500)
+
+    return jsonify({'status': 'DONE', 'image_name': image_name})
 
 
 @app.route('/api/agent/<agent_id>/image/status', methods=['GET'])
@@ -109,12 +120,40 @@ def start_agent(agent_id):
         if not agent:
             return create_error_response(f"Agent with id {agent_id} not found", 404)
             
-        # TODO: implement logic to start the agent and return run_id
-        status = "RUNNING"  # Placeholder for actual status
-        return jsonify({'status': status, 'run_id': 'placeholder_run_id'})
-        
+        # Determine the container's port the supervisor for the agent is listening on.
+        supervisor_port = 4000  # Placeholder for actual port retrieval logic
+
+        # Insert the run record into the database
+        run = Run(agent_id=agent_id, image_id=agent.image_id, config=agent.config, status="PENDING")
+        db.session.add(run)
+        db.session.commit()
+        logger.info(f"Run record created in database for agent {agent_id}")
+
+        # Call the supervisor API to start the agent run
+        # Prepare the request payload with run_id and environment variables
+        payload = {
+          'run_id': run.id,
+          'envs': agent.config.get('envs', {})
+        }
+
+        # Make the API request to the supervisor for starting the agent run.
+        response = requests.post(f'http://localhost:{supervisor_port}/api/agent/start', json=payload)
+        if response.status_code != 200:
+          run.status = 'ERROR'
+          run.output = 'Error: ' + response.text
+          db.session.commit()
+          raise Exception(f"Failed to start agent run: {response.text}")
+
+        # Update run status to RUNNING
+        run.status = "RUNNING"
+        db.session.commit()
+
+        logger.info(f"Agent run started successfully for agent {agent_id}")
+
     except Exception as e:
         return create_error_response(f"Internal server error: {str(e)}", 500)
+
+    return jsonify({'status': 'RUNNING', 'run_id': run.id})
 
 
 @app.route('/api/agent/<agent_id>/run/<run_id>/status', methods=['GET'])

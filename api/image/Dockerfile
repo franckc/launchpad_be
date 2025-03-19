@@ -13,4 +13,6 @@ RUN uv sync --frozen || uv sync
 
 # Keep the WORKDIR as /app/supervisor for the CMD
 # Run the supervisor
-CMD ["uv", "run", "python", "supervisor.py"]
+# TODO: consider using a proper process manager that restarts the supervisor
+# if it crashes
+CMD ["sh", "-c", "uv run python supervisor.py > supervisor.log 2>&1"]
