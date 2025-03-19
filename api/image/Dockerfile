@@ -5,14 +5,12 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 ADD . /app
 
 # Sync the project into a new environment, using the frozen lockfile
-WORKDIR /app
-
-# Note: in case the repo does not have a uv.lock file --frozen fails so fallback to just sync.
+WORKDIR /app/agent
 RUN uv sync --frozen || uv sync
 
-# Set environment variables
-ENV PYTHONPATH="/app/src"
+WORKDIR /app/supervisor
+RUN uv sync --frozen || uv sync
 
-# Run the application
-# TODO: supervisor should read agent name and other config from a yaml like file?
-CMD ["uv", "run", "python", "supervisor/supervisor.py"]
+# Keep the WORKDIR as /app/supervisor for the CMD
+# Run the supervisor
+CMD ["uv", "run", "python", "supervisor.py"]

@@ -1,0 +1,9 @@
+[project]
+name = "launchpad-supervisor"
+version = "0.1.0"
+description = "Agent supervisor for Launchpad AI Engine"
+requires-python = ">=3.10, <=3.13"
+
+dependencies = [
+    "flask>=3.1.0",
+]

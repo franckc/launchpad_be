@@ -21,7 +21,8 @@ if (IMAGES_ROOT_DIR is None):
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def clone_repository(github_url):
+# Clone the agent repo to the staging/agent directory
+def clone_repository(staging_dir, github_url):
     """
     Clone a GitHub repository into a unique temporary staging directory.
     
@@ -32,19 +33,18 @@ def clone_repository(github_url):
         Path: The path to the staging directory containing the cloned repository
     """
     try:
-        # Create a unique temporary staging directory
-        staging_dir = tempfile.mkdtemp(dir=STAGING_ROOT_DIR, prefix="repo_staging_")
-        logger.info(f"Created temporary staging directory: {staging_dir}")
-        
-        # Clone the repository into the staging directory
+        staging_agent_dir = Path(staging_dir) / "agent"
+        staging_agent_dir.mkdir(exist_ok=True)
+
+        # Clone the repository into the agent staging directory
         logger.info(f"Cloning repository: {github_url}")
-        subprocess.run(["git", "clone", github_url, staging_dir], 
+        subprocess.run(["git", "clone", github_url, str(staging_agent_dir)], 
                       check=True, 
                       stdout=subprocess.PIPE, 
                       stderr=subprocess.PIPE)
         
-        logger.info(f"Successfully cloned repository to {staging_dir}")
-        return Path(staging_dir)
+        logger.info(f"Successfully cloned repository to {staging_agent_dir}")
+        return staging_agent_dir
     
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to clone repository: {e.stderr.decode().strip()}")
@@ -54,83 +54,9 @@ def clone_repository(github_url):
         raise
 
 
-def copy_supervisor_code(staging_dir):
-    # Get the path to the supervisor directory in the current codebase
-    current_dir = Path(__file__).parent.parent.parent  # Go up to the root of the codebase
-    supervisor_dir = current_dir / "supervisor"
-    
-    if not supervisor_dir.exists():
-        raise FileNotFoundError(f"Supervisor directory not found at {supervisor_dir}")
-    
-    # Create the destination directory in staging
-    staging_supervisor_dir = staging_dir / "supervisor"
-    staging_supervisor_dir.mkdir(exist_ok=True)
-    
-    # Copy supervisor files to staging directory
-    logger.info(f"Copying supervisor code to {staging_supervisor_dir}")
-    subprocess.run(["cp", "-r", f"{supervisor_dir}/.", f"{staging_supervisor_dir}/"], 
-                    check=True, 
-                    stdout=subprocess.PIPE, 
-                    stderr=subprocess.PIPE)
-    
-    logger.info(f"Successfully copied supervisor code to staging directory")
-
-def update_pyproject(staging_dir):
-    pyproject_path = staging_dir / "pyproject.toml"
-    try:
-        # Check if pyproject.toml exists
-        if pyproject_path.exists():
-            logger.info(f"Updating existing pyproject.toml at {pyproject_path}")
-        with open(pyproject_path, "r") as f:
-            content = f.read()
-        
-        # Check if the file uses TOML format
-        try:
-            # Parse the TOML content
-            parsed_toml = tomli.loads(content)
-            
-            # Add flask to dependencies (create section if needed)
-            if 'project' not in parsed_toml:
-                parsed_toml['project'] = {}
-            if 'dependencies' not in parsed_toml['project']:
-                parsed_toml['project']['dependencies'] = []
-            
-            # Check if flask is already in dependencies
-            dependencies = parsed_toml['project']['dependencies']
-            if 'flask' not in [dep.split('>=')[0].strip() for dep in dependencies 
-                if isinstance(dep, str)]:
-                    dependencies.append('flask')
-            
-            # Write the updated TOML back
-            with open(pyproject_path, "wb") as f:
-                tomli_w.dump(parsed_toml, f)
-            logger.info("Successfully added flask to project dependencies")
-            
-        except (tomli.TOMLDecodeError, KeyError) as e:
-            logger.warning(f"Failed to parse pyproject.toml: {str(e)}. Creating a new one.")
-            _create_new_pyproject(pyproject_path)
-        else:
-            logger.info(f"No pyproject.toml found at {pyproject_path}. Creating a new one.")
-        _create_new_pyproject(pyproject_path)
-
-    except Exception as e:
-        logger.error(f"Error updating pyproject.toml: {str(e)}")
-        raise
-
-    # Helper function to create a new pyproject.toml
-    def _create_new_pyproject(path):
-        with open(path, "w") as f:
-            f.write("[project]\n")
-            f.write("name = \"agent-with-supervisor\"\n")
-            f.write("version = \"0.1.0\"\n")
-            f.write("dependencies = [\"flask\"]\n")
-        logger.info(f"Created new pyproject.toml at {path}")
-
-
-def prepare_staging(staging_dir):
+def add_supervisor(staging_dir):
     """
-    Copy the supervisor directory from the current codebase into the staging directory.
-    Add a dependency on flask to the pyproject.toml file in the staging directory.
+    Clone a GitHub repository into a unique temporary staging directory.
     
     Args:
         staging_dir (Path): Path to the staging directory
@@ -138,10 +64,25 @@ def prepare_staging(staging_dir):
     Returns:
     """
     try:
-        copy_supervisor_code(staging_dir)
+        current_dir = Path(__file__).parent.parent.parent  # Go up to the root of the codebase
+        supervisor_dir = current_dir / "supervisor"
         
-        update_pyproject(staging_dir)
-    
+        if not supervisor_dir.exists():
+            raise FileNotFoundError(f"Supervisor directory not found at {supervisor_dir}")
+        
+        # Create the destination directory in staging
+        staging_supervisor_dir = Path(staging_dir) / "supervisor"
+        staging_supervisor_dir.mkdir(exist_ok=True)
+        
+        # Copy supervisor files to staging directory
+        logger.info(f"Copying supervisor code to {staging_supervisor_dir}")
+        subprocess.run(["cp", "-r", f"{supervisor_dir}/.", f"{staging_supervisor_dir}/"], 
+                        check=True, 
+                        stdout=subprocess.PIPE, 
+                        stderr=subprocess.PIPE)
+        
+        logger.info(f"Successfully copied supervisor code to staging directory")
+        return staging_supervisor_dir
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to copy supervisor code: {e.stderr.decode().strip()}")
         raise
@@ -192,8 +133,7 @@ def build_docker_image(staging_dir, agent_id):
         #     stdout=subprocess.PIPE,
         #     stderr=subprocess.PIPE
         # )
-        
-        logger.info(f"Docker image saved successfully to: {image_path}")
+        #logger.info(f"Docker image saved successfully to: {image_path}")
         return str(image_name)
     
     except subprocess.CalledProcessError as e:
@@ -205,14 +145,19 @@ def build_docker_image(staging_dir, agent_id):
 
 # Main entry point method for building an image for an agent.
 def build_image(github_url, agent_id):
+
+    # Create a unique temporary staging directory
+    staging_dir = tempfile.mkdtemp(dir=STAGING_ROOT_DIR, prefix="repo_staging_")
+    logger.info(f"Created temporary staging directory: {staging_dir}")
+
     # Clone the repository
     logger.info(f"Cloning repository: {github_url}")
-    staging_dir = clone_repository(github_url)
-    logger.info(f"Repository cloned successfully to: {staging_dir}")
+    agent_dir = clone_repository(staging_dir, github_url)
+    logger.info(f"Repository cloned successfully to: {agent_dir}")
     
-    # Prepare staging by adding the supervisor code
+    # Add the supervisor code to staging
     logger.info("Preparing staging directory...")
-    prepare_staging(staging_dir)
+    add_supervisor(staging_dir)
     logger.info(f"Supervisor code staged at: {staging_dir}")
 
     # Build the Docker image
