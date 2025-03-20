@@ -5,8 +5,9 @@ import tempfile
 import subprocess
 import logging
 from pathlib import Path
-import tomli_w
-import tomli
+import glob
+import re
+
 
 STAGING_ROOT_DIR = os.getenv("STAGING_ROOT_DIR")
 if (STAGING_ROOT_DIR is None):
@@ -53,6 +54,66 @@ def clone_repository(staging_dir, github_url):
         logger.error(f"An error occurred: {str(e)}")
         raise
 
+def extract_input_keys(agent_dir):
+    """
+    Extract the input keys from the agent configuration files.
+    
+    Args:
+        agent_dir (Path): Path to the agent directory
+        
+    Returns:
+        list: List of input keys required by the agent
+    """
+    
+    try:
+        # Look for config files in src/*/config
+        config_dirs = list(agent_dir.glob('src/*/config'))
+        
+        if not config_dirs:
+            raise FileNotFoundError("No config directory found in src/*/config")
+        
+        config_dir = config_dirs[0]  # Take the first matching directory
+        
+        agents_file = config_dir / "agents.yaml"
+        tasks_file = config_dir / "tasks.yaml"
+        
+        if not agents_file.exists():
+            raise FileNotFoundError(f"agents.yaml not found in {config_dir}")
+        
+        if not tasks_file.exists():
+            raise FileNotFoundError(f"tasks.yaml not found in {config_dir}")
+        
+        logger.info(f"Found configuration files in {config_dir}")
+        
+        # Load and extract all input keys (inside curly braces) from agents.yaml and tasks.yaml
+        input_keys = set()
+        
+        # Read both files as text to extract patterns with curly braces
+        with open(agents_file, 'r') as f:
+            agents_content = f.read()
+            
+        with open(tasks_file, 'r') as f:
+            tasks_content = f.read()
+            
+        # Process both files to find patterns like {input_key}
+        
+        # Find all substrings enclosed in curly braces
+        pattern = r'\{([^{}]+)\}'
+        
+        # Extract matches from both files and add to set for deduplication
+        for match in re.finditer(pattern, agents_content):
+            input_keys.add(match.group(1))
+            
+        for match in re.finditer(pattern, tasks_content):
+            input_keys.add(match.group(1))
+            
+        logger.info(f"Extracted {len(input_keys)} unique input keys from configuration files")
+        
+        return list(input_keys)
+        
+    except Exception as e:
+        logger.error(f"Error extracting input keys: {str(e)}")
+        raise
 
 def add_supervisor(staging_dir):
     """
@@ -91,7 +152,7 @@ def add_supervisor(staging_dir):
         raise
 
 
-def build_docker_image(staging_dir, agent_id):
+def build_docker_image(staging_dir, agent_id, image_id):
     """
     Build a Docker image from the staging directory.
     
@@ -103,7 +164,7 @@ def build_docker_image(staging_dir, agent_id):
         str: The name of the built Docker image
     """
     try:
-        image_name = f"agent_image_{agent_id}"
+        image_name = f"agent_{agent_id}_image_{image_id}"
         image_path = Path(IMAGES_ROOT_DIR) / f"{image_name}.tar"
         
         # Get the directory containing this script for the Dockerfile
@@ -144,7 +205,8 @@ def build_docker_image(staging_dir, agent_id):
         raise
 
 # Main entry point method for building an image for an agent.
-def build_image(github_url, agent_id):
+# Returns the name of the built image and the input keys extracted from the agent configuration files.
+def build_image(github_url, agent_id, image_id):
 
     # Create a unique temporary staging directory
     staging_dir = tempfile.mkdtemp(dir=STAGING_ROOT_DIR, prefix="repo_staging_")
@@ -155,6 +217,11 @@ def build_image(github_url, agent_id):
     agent_dir = clone_repository(staging_dir, github_url)
     logger.info(f"Repository cloned successfully to: {agent_dir}")
     
+    # Check the repo is a valid crewAI agent by parsing the config/agents.yaml and config/tasks.yaml files
+    # and extract the inputs key names.
+    input_keys = extract_input_keys(agent_dir)
+    logger.info(f"Extracted input keys: {input_keys}")
+
     # Add the supervisor code to staging
     logger.info("Preparing staging directory...")
     add_supervisor(staging_dir)
@@ -162,10 +229,10 @@ def build_image(github_url, agent_id):
 
     # Build the Docker image
     logger.info("Building Docker image...")
-    image_name = build_docker_image(staging_dir, agent_id)
+    image_name = build_docker_image(staging_dir, agent_id, image_id)
     logger.info(f"Docker image built and saved with name: {image_name}")
 
-    return image_name
+    return image_name, input_keys
 
 
 def main():
