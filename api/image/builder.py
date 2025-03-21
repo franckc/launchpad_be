@@ -151,6 +151,46 @@ def add_supervisor(staging_dir):
         logger.error(f"An error occurred while preparing staging: {str(e)}")
         raise
 
+def prepare_staging(staging_dir):
+    # Add Flask dependency to pyproject.toml
+    pyproject_path = staging_dir / "pyproject.toml"
+    if pyproject_path.exists():
+        logger.info(f"Adding flask dependency to {pyproject_path}")
+        
+        # Read the existing pyproject.toml content
+        with open(pyproject_path, "r") as f:
+            content = f.read()
+        
+        # Check if dependencies section exists
+        if "dependencies" in content:
+            # Find the dependencies section and add flask
+            import re
+            pattern = r'(dependencies\s*=\s*\[)([^\]]*?)(\])'
+            
+            # Check if flask is already in dependencies
+            if "flask" not in content:
+                # Add flask to the dependencies list
+                replacement = r'\1\2    "flask>=3.1.0",\n\3'
+                new_content = re.sub(pattern, replacement, content)
+                
+                # Write the modified content back
+                with open(pyproject_path, "w") as f:
+                    f.write(new_content)
+                logger.info("Added flask dependency to existing dependencies section")
+            else:
+                logger.info("Flask dependency already exists in pyproject.toml")
+        else:
+            # If dependencies section doesn't exist, append it
+            with open(pyproject_path, "a") as f:
+                f.write('\ndependencies = [\n    "flask>=3.1.0",\n]\n')
+            logger.info("Created new dependencies section with flask")
+    else:
+        # If pyproject.toml doesn't exist, create it with dependencies
+        with open(pyproject_path, "w") as f:
+            f.write('[build-system]\ndependencies = [\n    "flask>=3.1.0",\n]\n')
+        logger.info("Created new pyproject.toml with flask dependency")
+
+    return staging_supervisor_dir
 
 def build_docker_image(staging_dir, agent_id, image_id):
     """

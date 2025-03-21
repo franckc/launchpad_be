@@ -1,5 +1,7 @@
 import subprocess
 
+SUPERVISOR_PORT = 4000
+
 # Utilties to manage docker containers.
 # Calling the docker cli directly. In the future consider using a library like docker-py.
 
@@ -8,7 +10,7 @@ import subprocess
 def get_or_start_container(image_name):
   """
   Start a container from the given image.
-  Returns a tuple (container_id, port) where port is the host port mapped to container's port 4000.
+  Returns a tuple (container_id, port) where port is the host port mapped to container's port SUPERVISOR_PORT.
   """
   # Step 1: Check if there is already a container running for image with name image_name
   try:
@@ -24,7 +26,7 @@ def get_or_start_container(image_name):
       container_id = check_running.stdout.strip()
       # Get the port mapping for this container
       port_result = subprocess.run(
-        ["docker", "port", container_id, "4000"],
+        ["docker", "port", container_id, str(SUPERVISOR_PORT)],
         capture_output=True,
         text=True,
         check=True
@@ -34,9 +36,9 @@ def get_or_start_container(image_name):
       return (container_id, port)
     
     # Step 2: Start a container if none is running
-    # Bind port 4000 of the container (supervisor port) to a random port on localhost
+    # Bind port SUPERVISOR_PORT of the container (supervisor port) to a random port on localhost
     start_result = subprocess.run(
-      ["docker", "run", "-d", "-p", ":4000", image_name],
+      ["docker", "run", "-d", "-p", f":{SUPERVISOR_PORT}", image_name],
       capture_output=True,
       text=True,
       check=True

@@ -9,6 +9,7 @@ import sys
 import os
 import subprocess
 from pathlib import Path
+import json
 
 # Load environment variables
 #load_dotenv()  
@@ -26,7 +27,9 @@ if __name__ == "__main__":
     # Optional arguments
     parser.add_argument('--env', action='append', metavar='KEY=VALUE', 
                         help='Environment variables to set (e.g., --env API_KEY=xyz)')
-    
+    parser.add_argument('--input', action='append', metavar='KEY=VALUE', 
+                        help='Input for crew execution (e.g., --input topic=AI in healthcare)')
+
     args = parser.parse_args()
     
     # Process the arguments
@@ -43,6 +46,17 @@ if __name__ == "__main__":
                 print(f"Set environment variable: {key}")
             except ValueError:
                 print(f"Warning: Ignoring malformed environment variable: {env_var}")
+
+    # Process input data if provided
+    inputs = {}
+    if args.input:
+        for input_var in args.input:
+            try:
+                key, value = input_var.split('=', 1)
+                inputs[key] = value
+                print(f"Received input: {key}={value}")
+            except ValueError:
+                print(f"Warning: Ignoring malformed input: {input_var}")
 
     # Execute the command
     if command == 'run':
@@ -75,16 +89,26 @@ if __name__ == "__main__":
         stdout_log = os.path.join(run_dir, "stdout.log")
         stderr_log = os.path.join(run_dir, "stderr.log")
 
+        # Dump the input dictionary in a JSON file for the agent to read at startup
+        inputs_file = os.path.join(run_dir, "inputs.json")
+        with open(inputs_file, 'w') as f:
+            json.dump(inputs, f, indent=2)
+
         # Start the subprocess
         agent_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../agent")
         with open(stdout_log, 'w') as stdout_file, open(stderr_log, 'w') as stderr_file:
+            # Create a copy of the current environment and add CREW_INPUT_JSON
+            env = os.environ.copy()
+            env['CREW_INPUT_JSON'] = inputs_file
+            
             subprocess.run(
             ["uv", "run", "crewai", "run"],
             stdout=stdout_file,
             stderr=stderr_file,
-            cwd=agent_dir
+            cwd=agent_dir,  # Note: we change the working directory to the agent directory
+            env=env  # Pass the modified environment to the subprocess
             )
-            
+        
         print(f"Agent execution completed. Logs stored in {run_dir}")
         
     else:

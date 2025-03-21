@@ -1,5 +1,4 @@
 import logging
-import os
 import requests
 import traceback
 
@@ -55,11 +54,11 @@ def create_image(agent_id):
             # Update the agent configuration with input_keys
             if agent.config is None:
               agent.config = {}
-            agent.config['input_keys'] = input_keys
+            agent.config['inputKeys'] = input_keys # Note: camelcase for JSON in DB as a convention
             # Flag the column as modified to ensure SQLAlchemy detects the change
             flag_modified(agent, 'config')
             db.session.commit()
-            logger.info(f"Updated agent {agent_id} with input_keys: {input_keys}")
+            logger.info(f"Updated agent {agent_id} with inputKeys: {input_keys}")
 
             # Update the image name and status in the database
             image.name = image_name
@@ -78,7 +77,7 @@ def create_image(agent_id):
         print(traceback.format_exc())
         return create_error_response(f"Internal server error: {str(e)}", 500)
 
-    return jsonify({'status': 'DONE', 'image_name': image_name})
+    return jsonify({'status': 'DONE', 'imageName': image_name})
 
 
 @app.route('/api/agent/<agent_id>/image/status', methods=['GET'])
@@ -139,6 +138,16 @@ def start_agent(agent_id):
         description: Job not found
     """
     try:
+        if not request.is_json:
+            return create_error_response("Request must be JSON", 400)
+        # Extract the input data from the request
+        data = request.get_json()
+        if 'inputs' not in data:
+          return create_error_response("Request must contain 'inputs' field", 400)
+            
+        inputs = data['inputs']
+        logger.info(f"Received inputs for agent {agent_id}: {inputs}")
+
         # Query the agent from the database
         agent = db.session.query(Agent).filter(Agent.id == agent_id).first()
         if not agent:
@@ -149,11 +158,12 @@ def start_agent(agent_id):
         if not image:
             return create_error_response(f"No image found for agent {agent_id}", 404)
 
-        # Determine the container's port the supervisor for the agent is listening on.
-        supervisor_port = 4000  # Placeholder for actual port retrieval logic
-
         # Insert the run record into the database
-        run = Run(agent_id=agent_id, image_id=image.id, config=agent.config, status="PENDING")
+        config = {
+          'agent': agent.config,
+          'inputs': inputs
+        }
+        run = Run(agent_id=agent_id, image_id=image.id, config=config, status="PENDING")
         db.session.add(run)
         db.session.commit()
         logger.info(f"Run record created in database for agent {agent_id}")
@@ -163,13 +173,14 @@ def start_agent(agent_id):
         logger.info(f"Container {container_id} with supervisor port {supervisor_port} running for agent {agent_id}")
 
         # Call the supervisor API to start the agent run
-        # Prepare the request payload with run_id and environment variables
+        # Prepare the request payload with environment variables and inputs
         payload = {
-          'envs': agent.config.get('envs', {})
+          'envs': agent.config.get('envs', {}),
+          'inputs': inputs
         }
 
         # Make the API request to the supervisor for starting the agent run.
-        response = requests.post(f'http://localhost:{supervisor_port}/api/run/${run.id}/start', json=payload)
+        response = requests.post(f'http://localhost:{supervisor_port}/api/run/{run.id}/start', json=payload)
         if response.status_code != 200:
           run.status = 'ERROR'
           run.output = 'Error: ' + response.text
@@ -180,12 +191,12 @@ def start_agent(agent_id):
         run.status = "RUNNING"
         db.session.commit()
 
-        logger.info(f"Agent run started successfully for agent {agent_id}")
+        logger.info(f"Agent run {run.id} started successfully for agent {agent_id}")
 
     except Exception as e:
         return create_error_response(f"Internal server error: {str(e)}", 500)
 
-    return jsonify({'status': 'RUNNING', 'run_id': run.id})
+    return jsonify({'status': 'RUNNING', 'runId': run.id})
 
 
 @app.route('/api/agent/<agent_id>/run/<run_id>/status', methods=['GET'])
