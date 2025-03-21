@@ -80,9 +80,9 @@ def agent_status(run_id):
   # TODO: Implement agent status checking logic
   return jsonify({"status": "running"})
 
-@app.route('/api/run/<run_id>/logs', methods=['GET'])
+@app.route('/api/run/<run_id>/output', methods=['GET'])
 def agent_logs(run_id):
-  logger.info(f"Retrieving logs for run id {run_id}")
+  logger.info(f"Retrieving output for run id {run_id}")
 
   # Construct the paths to log files
   stdout_log_path = os.path.join(runs_path, run_id, "stdout.log")
@@ -110,6 +110,10 @@ def agent_logs(run_id):
 
   # Return the log contents
   return jsonify({"stdout": stdout_content, "stderr": stderr_content})
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+  return jsonify({"status": "healthy"})
 
 if __name__ == '__main__':
   app.run(host='0.0.0.0', port=SUPERVISOR_PORT, debug=True)

@@ -6,7 +6,7 @@ from flask import request, jsonify
 from api import app
 from api.models import db, Image, Run, Agent
 from api.image.builder import build_image
-from api.container.manage import get_or_start_container
+from api.container.manage import get_or_start_container, wait_for_container_supervisor
 from api.utils import create_error_response
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -172,6 +172,12 @@ def start_agent(agent_id):
         container_id, supervisor_port = get_or_start_container(image.name)
         logger.info(f"Container {container_id} with supervisor port {supervisor_port} running for agent {agent_id}")
 
+        # Wait for the supervisor API to come up within the container.
+        # This is a blocking call that waits for the supervisor API to become available.
+        # If the API is not available within 30 seconds, this will raise an exception.
+        # TODO: take action to recover or delete the container and mark the container as unhealthy in the DB.
+        wait_for_container_supervisor(supervisor_port)
+
         # Call the supervisor API to start the agent run
         # Prepare the request payload with environment variables and inputs
         payload = {
@@ -216,8 +222,8 @@ def get_run_status(agent_id, run_id):
 
 
 # Returns the logs of an agent run
-@app.route('/api/agent/<agent_id>/run/<run_id>/log', methods=['GET'])
-def get_run_output(run_id):
+@app.route('/api/agent/<agent_id>/run/<run_id>/output', methods=['GET'])
+def get_run_output(agent_id, run_id):
     """
     Get the logs for a specific agent run.
     ---
@@ -227,9 +233,38 @@ def get_run_output(run_id):
       404:
         description: Job not found
     """
-    # TODO: implement logic to retrieve job output based on run_id
-    output = "No output available" # Placeholder for actual output retrieval logic
-    return jsonify({'output': output})
+    try:
+      # Query the run from the database
+      run = db.session.query(Run).filter(Run.id == run_id, Run.agent_id == agent_id).first()
+      if not run:
+        return create_error_response(f"Run with id {run_id} not found for agent {agent_id}", 404)
+        
+      # Query the image to get the container details
+      image = db.session.query(Image).filter(Image.id == run.image_id).first()
+      if not image:
+        return create_error_response(f"Image not found for run {run_id}", 404)
+        
+      # Get the container and supervisor port
+      container_id, supervisor_port = get_or_start_container(image.name)
+      
+      # Call the supervisor API to get the run output
+      response = requests.get(f'http://localhost:{supervisor_port}/api/run/{run_id}/output')
+      if response.status_code != 200:
+        logger.error(f"Failed to get run output: {response.text}")
+        return create_error_response(f"Failed to get run output: {response.text}", 500)
+        
+      # Extract the output from the JSON response
+      output_data = response.json()
+      
+      # Update the run record in the database with the output
+      run.output = output_data
+      db.session.commit()
+
+    except Exception as e:
+      logger.error(f"Error retrieving run output: {str(e)}")
+      return create_error_response(f"Internal server error: {str(e)}", 500)
+
+    return jsonify(output_data)
 
 
 @app.errorhandler(404)
