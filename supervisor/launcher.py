@@ -101,15 +101,24 @@ if __name__ == "__main__":
             env = os.environ.copy()
             env['CREW_INPUT_JSON'] = inputs_file
             
-            subprocess.run(
-            ["uv", "run", "crewai", "run"],
-            stdout=stdout_file,
-            stderr=stderr_file,
-            cwd=agent_dir,  # Note: we change the working directory to the agent directory
-            env=env  # Pass the modified environment to the subprocess
+            # Start the subprocess
+            process = subprocess.Popen(
+                ["uv", "run", "crewai", "run"],
+                stdout=stdout_file,
+                stderr=stderr_file,
+                cwd=agent_dir,  # Note: we change the working directory to the agent directory
+                env=env  # Pass the modified environment to the subprocess
             )
+            
+            # Get the PID of the process and store it in a file
+            pid = process.pid
+            pid_file = os.path.join(run_dir, "pid")
+            with open(pid_file, 'w') as f:
+                f.write(str(pid))
         
-        print(f"Agent execution completed. Logs stored in {run_dir}")
+        # Note: we do not wait for the process to complete.
+        # The supervisor will monitor the process and handle the completion.
+        print(f"Agent execution started. Logs will be stored under {run_dir}")
         
     else:
         print(f"Unknown command: {command}")

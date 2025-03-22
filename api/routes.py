@@ -209,6 +209,7 @@ def start_agent(agent_id):
 def get_run_status(agent_id, run_id):
     """
     Get the status for a specific agent run.
+    Update the status in the database
     ---
     responses:
       200:
@@ -216,8 +217,39 @@ def get_run_status(agent_id, run_id):
       404:
         description: Job not found
     """
-    # TODO: implement logic to retrieve job status based on run_id
-    status = "UNKNOWN" # Placeholder for actual status retrieval logic
+    # Query the run from the database
+    run = db.session.query(Run).filter(Run.id == run_id, Run.agent_id == agent_id).first()
+    if not run:
+      return create_error_response(f"Run with id {run_id} not found for agent {agent_id}", 404)
+    
+    if (run.status in ['DONE', 'ERROR']):
+      # These are final states, no need to check the container.
+      return jsonify({'status': run.status})
+
+    # Query the image to get the container details
+    image = db.session.query(Image).filter(Image.id == run.image_id).first()
+    if not image:
+      return create_error_response(f"Image not found for run {run_id}", 404)
+      
+    # Get the container and supervisor port
+    container_id, supervisor_port = get_or_start_container(image.name)
+
+    response = requests.get(f'http://localhost:{supervisor_port}/api/run/{run_id}/status')
+    if response.status_code != 200:
+        logger.error(f"Failed to get run status: {response.text}")
+        return create_error_response(f"Failed to get run status: {response.text}", 500)
+    
+    status = response.json().get('status', 'UNKNOWN')
+    if status == 'UNKNOWN':
+        return create_error_response("Failed to get run status", 500)
+    if status not in ['RUNNING', 'DONE', 'ERROR']:
+        return create_error_response(f"Invalid status: {status}", 500)
+
+    # Update the run status in the database
+    logger.info(f"Run {run_id} status: {status}")
+    run.status = status
+    db.session.commit()
+
     return jsonify({'status': status})
 
 
@@ -226,6 +258,7 @@ def get_run_status(agent_id, run_id):
 def get_run_output(agent_id, run_id):
     """
     Get the logs for a specific agent run.
+    Update the output in the database if the run is in not yet in a final state.
     ---
     responses:
       200:
@@ -238,7 +271,15 @@ def get_run_output(agent_id, run_id):
       run = db.session.query(Run).filter(Run.id == run_id, Run.agent_id == agent_id).first()
       if not run:
         return create_error_response(f"Run with id {run_id} not found for agent {agent_id}", 404)
-        
+      
+      # If the run is PENDING, return an empty response
+      if run.status == 'PENDING':
+        return jsonify({})
+
+      # If the run is in a final state, return the output from the database
+      if run.status in ['DONE', 'ERROR']:
+        return jsonify(run.output)
+
       # Query the image to get the container details
       image = db.session.query(Image).filter(Image.id == run.image_id).first()
       if not image:
