@@ -33,7 +33,8 @@ The Agent Launchpad Backend provides a robust infrastructure for running AI agen
 ### Prerequisites
 
 - Python 3.10 or higher
-- Docker installed and running
+- uv installed
+- Docker
 - PostgreSQL database
 
 ### Setup
@@ -87,7 +88,6 @@ The application can be configured using environment variables or a `.env` file:
 - `PORT`: HTTP port (default: 5000)
 - `HOST`: Binding address (default: 0.0.0.0)
 - `DATABASE_URL`: PostgreSQL connection string
-- `CONTAINER_TIMEOUT`: Maximum running time for containers in seconds (default: 3600)
 
 ## Development
 
@@ -114,11 +114,11 @@ pytest
 
 - **Framework Support**: Add support for additional agent frameworks (LangChain, Swarm, etc.)
 - **Authentication**: Implement bearer token authentication for all API endpoints
-- **API Consolidation**: Merge `get_run_status` and `get_output` into a single endpoint
 - **Enhanced Security**: Run supervisor and agent as different users within containers
 - **Observability**: Implement HTTP/HTTPS proxying to log LLM and tool calls
-- **Horizontal Scaling**: Support for distributed agent execution across multiple nodes
+- **Horizontal Scaling**: Support multi-hosts for running containers vs single right now. Consider kubernetes or equivalent for managing the fleet of hosts.
 - **Resource Controls**: Fine-grained CPU/memory limits for containers
+- **API Consolidation**: Merge `get_run_status` and `get_output` into a single endpoint
 
 ## Troubleshooting
 
@@ -126,7 +126,6 @@ pytest
 
 - **Database Connection Errors**: Verify the `DATABASE_URL` is correct and the database is running
 - **Container Build Failures**: Check Docker daemon status and repository URL validity
-- **Agent Execution Timeouts**: Adjust the `CONTAINER_TIMEOUT` setting for long-running agents
 
 ## Contributing
 
