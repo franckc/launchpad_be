@@ -308,6 +308,16 @@ def get_run_output(agent_id, run_id):
     return jsonify(output_data)
 
 
+# Development endpoint to test the proxy
+@app.route('/api/echo', methods=['POST'])
+def proxy():
+    if not request.is_json:
+        return create_error_response("Request must be JSON", 400)
+    data = request.get_json()
+    logger.info(f"Echo endpoint received data: {data}")
+    return jsonify({ "status": "OK", "echo": data })
+
+
 @app.errorhandler(404)
 def not_found(error):
     return create_error_response("Resource not found", 404)
