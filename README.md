@@ -2,6 +2,8 @@
 
 The backend component of the Agent Launchpad platform, responsible for building, deploying, and managing AI agents in secure containerized environments.
 
+The associated Front-end for this project is implemented in a separate repository: https://github.com/franckc/launchpad
+
 ## Overview
 
 The Agent Launchpad Backend provides a robust infrastructure for running AI agents in isolated environments, collecting their outputs, and managing their lifecycle.
@@ -38,8 +40,8 @@ The Agent Launchpad Backend provides a robust infrastructure for running AI agen
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/veritai_agent_platform.git
-   cd veritai_agent_platform/be/launchpad_be
+   git clone https://github.com/franckc/launchpad.git
+   cd launchpad
    ```
 
 2. Install dependencies using `uv`:
